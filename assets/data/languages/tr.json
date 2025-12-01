@@ -1,0 +1,16 @@
+{
+    "ui": {
+        "start_game": "BAŞLA",
+        "quit_game": "ÇIKIŞ",
+        "loading": "Yükleniyor..."
+    },
+    "documents": {
+        "passport": "PASAPORT",
+        "entry_permit": "GİRİŞ İZNİ",
+        "name_field": "İsim:",
+        "expiry_date": "Son Kullanma:"
+    },
+    "dialogues": {
+        "intro": "Lütfen belgeleri hazırlayın."
+    }
+}

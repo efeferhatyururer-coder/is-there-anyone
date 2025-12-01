@@ -1,0 +1,16 @@
+{
+    "ui": {
+        "start_game": "START",
+        "quit_game": "QUIT",
+        "loading": "Loading..."
+    },
+    "documents": {
+        "passport": "PASSPORT",
+        "entry_permit": "ENTRY PERMIT",
+        "name_field": "Name:",
+        "expiry_date": "Expiry Date:"
+    },
+    "dialogues": {
+        "intro": "Papers ready, please."
+    }
+}
