@@ -6,7 +6,7 @@ from src.entities import Document
 
 class DocumentFactory:
     def __init__(self):
-        # Font boyutlarını belge boyutuna göre ayarladık
+        # Fontları yükle
         self.font = pygame.font.SysFont("Courier New", 14, bold=True)
         self.large_font = pygame.font.SysFont("Courier New", 16, bold=True)
         self.assets = {}
@@ -33,35 +33,34 @@ class DocumentFactory:
                 self.assets[f"{c}_id"] = pygame.image.load(fpath).convert_alpha()
 
     def _create_base_surface(self, asset_key, doc_type_key):
-        """Resmi yükle ve HEDEF BOYUTA GETİR (Yazı yazmadan önce!)"""
+        """Resmi yükle ve HEDEF BOYUTA GETİR"""
         target_size = DOC_SIZES[doc_type_key] # settings.py'dan alıyor
         
         if asset_key in self.assets:
             raw_img = self.assets[asset_key]
-            # ÖNCE RESİZE ET
             return pygame.transform.smoothscale(raw_img, target_size)
         else:
-            # Asset yoksa boş kutu
             surf = pygame.Surface(target_size)
             surf.fill((200, 200, 180))
             return surf
+
+    # --- BELGE OLUŞTURUCULAR ---
 
     def create_id_card(self, npc_data):
         country = npc_data.get("country", "turkey").lower()
         base_key = f"{country}_id"
         
-        # 1. Küçültülmüş zemini al
         surf = self._create_base_surface(base_key, "id_card")
         layout = DOC_LAYOUTS["id_card"]
         
-        # 2. Yazıları bu küçük zemin üzerine yaz (Koordinatlar artık tutacak)
-        self._draw_text(surf, npc_data["name"], layout["name"])
-        self._draw_text(surf, "ID: " + str(random.randint(10000,99999)), layout["id_no"])
-        self._draw_text(surf, npc_data["dob"], layout["dob"])
-        self._draw_text(surf, npc_data["issue"], layout["issue"])
-        self._draw_text(surf, npc_data["expiry"], layout["expiry"])
+        # ARTIK _draw_text YERİNE _draw_fit_text KULLANIYORUZ
+        self._draw_fit_text(surf, npc_data["name"], layout["name"])
+        self._draw_fit_text(surf, "ID: " + str(random.randint(10000,99999)), layout["id_no"])
+        self._draw_fit_text(surf, npc_data["dob"], layout["dob"])
+        self._draw_fit_text(surf, npc_data["issue"], layout["issue"])
+        self._draw_fit_text(surf, npc_data["expiry"], layout["expiry"])
         
-        # 3. Fotoğrafı Yapıştır
+        # Fotoğraf
         if "photo" in npc_data and npc_data["photo"]:
             x, y, w, h = layout["photo_rect"]
             try:
@@ -75,10 +74,10 @@ class DocumentFactory:
         surf = self._create_base_surface("entry", "entry_permit")
         layout = DOC_LAYOUTS["entry_permit"]
         
-        self._draw_text(surf, npc_data["name"], layout["name"])
-        self._draw_text(surf, npc_data["country"].upper(), layout["nationality"])
-        self._draw_text(surf, "15.05.1991", layout["valid_until"])
-        self._draw_text(surf, "TRANSIT", layout["purpose"])
+        self._draw_fit_text(surf, npc_data["name"], layout["name"])
+        self._draw_fit_text(surf, npc_data["country"].upper(), layout["nationality"])
+        self._draw_fit_text(surf, "15.05.1991", layout["valid_until"])
+        self._draw_fit_text(surf, "TRANSIT", layout["purpose"])
         
         return Document(280, 420, surf, "Entry Permit")
 
@@ -89,15 +88,40 @@ class DocumentFactory:
         status = "CLEAR" if random.random() > 0.1 else "INFECTED"
         color = (0, 100, 0) if status == "CLEAR" else (150, 0, 0)
         
-        self._draw_text(surf, npc_data["name"], layout["name"])
-        self._draw_text(surf, status, layout["status"], color=color, font=self.large_font)
-        self._draw_text(surf, "10.05.1991", layout["exam_date"])
-        self._draw_text(surf, "Dr. A. Ivan", layout["doctor"])
-        self._draw_text(surf, "None", layout["notes"])
+        self._draw_fit_text(surf, npc_data["name"], layout["name"])
+        self._draw_fit_text(surf, status, layout["status"], color=color, font=self.large_font)
+        self._draw_fit_text(surf, "10.05.1991", layout["exam_date"])
+        self._draw_fit_text(surf, "Dr. A. Ivan", layout["doctor"])
+        self._draw_fit_text(surf, "None", layout["notes"])
         
         return Document(460, 440, surf, "Health Report")
 
-    def _draw_text(self, surface, text, pos, color=(30, 30, 30), font=None):
+    # --- AKILLI YAZI FONKSİYONU (YENİ) ---
+    def _draw_fit_text(self, surface, text, pos, color=(30, 30, 30), font=None):
+        """
+        Yazıyı belirtilen konuma yazar. 
+        Eğer yazı belgenin sağ kenarına çarpıyorsa, otomatik olarak DARALTIR (Scale eder).
+        """
         if font is None: font = self.font
-        render = font.render(str(text), True, color)
-        surface.blit(render, pos)
+        
+        # 1. Yazıyı normal oluştur (Render)
+        text_surf = font.render(str(text), True, color)
+        text_w = text_surf.get_width()
+        text_h = text_surf.get_height()
+        
+        x, y = pos
+        doc_w = surface.get_width()
+        
+        # 2. Sınırı Hesapla
+        # Belgenin genişliğinden, yazının başlangıç noktasını (x) çıkar.
+        # Üstüne sağ taraftan 15 piksel güvenlik payı (margin) bırak.
+        max_allowed_width = doc_w - x - 15 
+        
+        # 3. Kontrol Et ve Sığdır
+        if text_w > max_allowed_width:
+            # Eğer yazı çok uzunsa, genişliğini zorla sınıra indir
+            # Yüksekliği sabit kalsın (text_h), sadece eni daralsın.
+            text_surf = pygame.transform.smoothscale(text_surf, (max_allowed_width, text_h))
+            
+        # 4. Ekrana Bas
+        surface.blit(text_surf, pos)

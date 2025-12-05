@@ -6,8 +6,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSET_PATH = os.path.join(BASE_DIR, "assets")
 
 # --- EKRAN ---
-SCREEN_WIDTH = 1280
-SCREEN_HEIGHT = 720
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
 FPS = 60
 BG_COLOR = (10, 10, 10)
 
@@ -23,17 +23,16 @@ START_HOUR = 9
 END_HOUR = 17
 
 # --- KARAKTER AYARLARI ---
-CHAR_SCALE_HEIGHT = 500 
+CHAR_SCALE_HEIGHT = 200 
 
-# --- BELGE DÜZENİ (REVİZE EDİLDİ) ---
-# Entry ve Health belgeleri genişletildi (Width arttı)
+# --- BELGE DÜZENİ (ESKİ HALİ) ---
 DOC_SIZES = {
     "id_card": (300, 190),      # ID Kart boyutu
-    "entry_permit": (300, 400), # Daha geniş A4 oranı
-    "health_report": (300, 400) # Daha geniş A4 oranı
+    "entry_permit": (300, 400), # Standart boyut
+    "health_report": (300, 400) # Standart boyut
 }
 
-# Yazıların Koordinatları (x, y) - Yeni boyutlara göre ayarlandı
+# Yazıların Koordinatları (x, y) - Eski koordinatlar
 DOC_LAYOUTS = {
     "id_card": {
         "name": (125, 52),
@@ -60,11 +59,19 @@ DOC_LAYOUTS = {
     }
 }
 
+# --- KAŞE AYARLARI ---
+STAMP_POSITIONS = {
+    "approve": (SCREEN_WIDTH - 150, 400), # Masanın sağı
+    "deny": (SCREEN_WIDTH - 150, 520)     # Masanın sağı (biraz aşağıda)
+}
+
+STAMP_COLOR_APPROVE = (0, 150, 0) # Yeşil
+STAMP_COLOR_DENY = (180, 0, 0)    # Kırmızı
+
 # --- BED / DAY CYCLE ---
-# Index of the bedroom room image (0-based, room_0 .. room_7)
-BED_ROOM_INDEX = 7
-# Clickable bed area in screen coordinates (placeholder - adjustable)
-BED_RECT = pygame.Rect(100, 300, 400, 300)
+BED_ROOM_INDEX = 5
+# X=250 (Daha geniş), Y=230 (Daha yukarıdan başlar)
+BED_RECT = pygame.Rect(250, 230, 380, 300)
 
 # UI Colors
 FONT_COLOR_UI = (200, 200, 200)
