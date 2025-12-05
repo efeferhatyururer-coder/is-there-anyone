@@ -4,7 +4,7 @@ import math
 import time
 import random
 from src.settings import *
-from src.entities import Document
+from src.entities import Document, Shutter, StampTool
 from src.generator import CharacterLoader
 from src.doc_generator import DocumentFactory
 
@@ -57,14 +57,20 @@ class DeskState(BaseState):
         # Debug buttons
         self.btn_green = pygame.Rect(600, 300, 120, 50)
         self.btn_red = pygame.Rect(600, 400, 120, 50)
-        
-        # --- RAPOR EKRANI İÇİN "SONRAKİ GÜN" BUTONU ---
-        # Sağ alt köşeye yerleştiriyoruz (X=630, Y=530)
         self.btn_next_day = pygame.Rect(SCREEN_WIDTH - 170, SCREEN_HEIGHT - 70, 150, 50)
         
-        # --- CAM AYARI (Kalıcı) ---
+        # Cam Ayarları
         self.GLASS_SIZE = (485, 260)
         self.glass_rect = pygame.Rect((SCREEN_WIDTH - self.GLASS_SIZE[0]) // 2, 78, self.GLASS_SIZE[0], self.GLASS_SIZE[1])
+        self.shutter = Shutter(self.glass_rect)
+
+        # --- KAŞE ALETLERİ ---
+        self.stamp_tools = [
+            StampTool("approved", (560, 419)), # Yeşil
+            StampTool("declined", (620, 419))  # Kırmızı
+        ]
+        
+        self.has_stamped_permit = False 
 
         self.current_room_index = 0
         self.current_zoom = 1.0
@@ -77,11 +83,8 @@ class DeskState(BaseState):
         self.is_manual_zooming = False
         
         self.current_time_minutes = START_HOUR * 60
-        
-        # --- RAPOR VE İSTATİSTİK SİSTEMİ ---
         self.daily_stats = [] 
         self.report_mode = False
-        # self.report_start_time artık kullanılmıyor çünkü butona bağladık
 
         self.create_new_visitor()
 
@@ -97,7 +100,6 @@ class DeskState(BaseState):
             from src.entities import AnimatedNPC
             self.current_npc = AnimatedNPC([surf], race_code='fallback')
         
-        # Rastgele Belge Oluştur
         countries = ["latvia", "lithuania", "ukraine", "belarus", "kazakhistan", "turkey", "sweden", "germany"]
         birth_year = random.randint(1946, 1973)
         npc_data = {
@@ -118,32 +120,28 @@ class DeskState(BaseState):
         if random.random() > 0.5:
             doc_health = self.doc_factory.create_health_report(npc_data)
             if doc_health: self.documents.append(doc_health)
+            
+        self.has_stamped_permit = False 
 
     def on_enter(self):
         self.target_zoom = 1.0
 
     def handle_events(self, events):
-        # --- RAPOR MODU (Siyah Ekran) EVENTLERİ ---
         if self.report_mode:
             for event in events:
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    import sys; sys.exit()
-                
-                # Sadece "SONRAKİ GÜN" butonuna tıklamayı dinle
+                    pygame.quit(); import sys; sys.exit()
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     if self.btn_next_day.collidepoint(event.pos):
-                        # YENİ GÜNE GEÇİŞ İŞLEMLERİ
                         self.game.day_count = getattr(self.game, 'day_count', 1) + 1
                         self.current_time_minutes = START_HOUR * 60
-                        self.daily_stats = [] # İstatistikleri sıfırla
-                        self.report_mode = False # Siyah ekranı kaldır
+                        self.daily_stats = [] 
+                        self.report_mode = False 
                         self.create_new_visitor()
                         self.current_room_index = 0
                         print(f"Day {self.game.day_count} Started via Button")
-            return # Rapor modundayken oyunun geri kalanını durdur
+            return 
 
-        # --- NORMAL OYUN MODU EVENTLERİ ---
         mouse_x, mouse_y = pygame.mouse.get_pos()
         for event in events:
             if event.type == pygame.KEYDOWN:
@@ -151,218 +149,164 @@ class DeskState(BaseState):
                 if event.key == pygame.K_e: self.manager.change_state("EYE_EXAM")
                 if event.key == pygame.K_h: self.manager.change_state("HAND_EXAM")
 
-            # --- ZOOM ---
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
-                self.is_manual_zooming = True
-                self.focus_x = mouse_x
-                self.focus_y = mouse_y
+                if self.current_room_index != 0: 
+                    self.is_manual_zooming = True; self.focus_x = mouse_x; self.focus_y = mouse_y
             if event.type == pygame.MOUSEBUTTONUP and event.button == 3:
                 self.is_manual_zooming = False
-            
             if event.type == pygame.MOUSEMOTION:
                 self.last_mouse_move_time = time.time()
             
-            # --- BELGE SÜRÜKLEME ---
+            # --- KAŞE SÜRÜKLEME VE BASMA ---
             if self.current_room_index == 0:
-                for doc in reversed(self.documents):
-                    if doc.update(event):
-                        self.documents.remove(doc)
-                        self.documents.append(doc)
-                        break
+                stamp_handled = False
+                for tool in self.stamp_tools:
+                    res = tool.update(event)
+                    if res is True: 
+                        stamp_handled = True
+                    elif res == "dropped": 
+                        for doc in reversed(self.documents):
+                            if doc.rect.collidepoint(mouse_x, mouse_y):
+                                if "Permit" in doc.doc_type or "Report" in doc.doc_type:
+                                    doc.add_mark(tool.seal_image, (mouse_x, mouse_y))
+                                    if "Permit" in doc.doc_type:
+                                        self.has_stamped_permit = True
+                                break
+                        stamp_handled = True
+
+                if not stamp_handled:
+                    for doc in reversed(self.documents):
+                        if doc.update(event):
+                            self.documents.remove(doc)
+                            self.documents.append(doc)
+                            break
             
-            # --- YATAK TIKLAMA (GÜN SONU) ---
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 try:
                     if self.current_room_index == BED_ROOM_INDEX and self.current_time_minutes >= END_HOUR * 60:
-                        if BED_RECT.collidepoint(event.pos):
-                            # RAPOR MODUNU BAŞLAT (Siyah Ekran)
-                            self.report_mode = True
-                            # self.report_start_time = time.time() # Artık gerek yok
-                except Exception:
-                    pass
+                        if BED_RECT.collidepoint(event.pos): self.report_mode = True
+                except: pass
 
             # --- POZİTİF / NEGATİF BUTONLARI ---
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                # Yeşil (POSITIVE)
-                if self.btn_green.collidepoint(event.pos):
-                    # Kayıt Al
-                    is_monster = getattr(self.current_npc, 'is_monster', False)
-                    self.daily_stats.append({"is_monster": is_monster, "action": "approve"})
-                    # Hemen Yeni Karakter Çağır (Animasyon beklemeden)
-                    self.create_new_visitor()
-                
-                # Kırmızı (NEGATIVE)
-                if self.btn_red.collidepoint(event.pos):
-                    # Kayıt Al
-                    is_monster = getattr(self.current_npc, 'is_monster', False)
-                    self.daily_stats.append({"is_monster": is_monster, "action": "deny"})
-                    # Hemen Yeni Karakter Çağır
-                    self.create_new_visitor()
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.shutter.state == "OPEN":
+                # KURAL: DAMGA BASILMADAN KARAR VERİLEMEZ!
+                # (Test için geçici olarak 'or True' ekleyebilirsin ama normalde kural bu)
+                if not self.has_stamped_permit:
+                    print("UYARI: Önce Entry Permit'e damga basmalısın!") 
+                else:
+                    action = "approve" if self.btn_green.collidepoint(event.pos) else "deny" if self.btn_red.collidepoint(event.pos) else None
+                    
+                    if action:
+                        is_monster = getattr(self.current_npc, 'is_monster', False)
+                        self.daily_stats.append({"is_monster": is_monster, "action": action})
+                        self.shutter.trigger_close(self.create_new_visitor)
 
     def update(self):
-        # Rapor modundaysak oyunu dondur (Update yapma)
-        if self.report_mode:
-            return 
-
+        if self.report_mode: return 
         current_time = time.time()
-        
-        # Zoom Mantığı
-        if self.is_manual_zooming:
-            self.target_zoom = MANUAL_ZOOM_LEVEL
+        self.shutter.update()
+
+        if self.is_manual_zooming: self.target_zoom = MANUAL_ZOOM_LEVEL
         else:
             idle = current_time - self.last_mouse_move_time
-            if idle > IDLE_TIME_TRIGGER:
-                self.target_zoom = MAX_AUTO_ZOOM
-                self.focus_x = SCREEN_WIDTH / 2; self.focus_y = SCREEN_HEIGHT / 2
-            else:
-                self.target_zoom = 1.0
-        
+            if idle > IDLE_TIME_TRIGGER: self.target_zoom = MAX_AUTO_ZOOM; self.focus_x = SCREEN_WIDTH/2; self.focus_y = SCREEN_HEIGHT/2
+            else: self.target_zoom = 1.0
         self.current_zoom += (self.target_zoom - self.current_zoom) * MANUAL_ZOOM_SPEED
 
-        # Oda Değişimi
         if self.current_zoom < 1.05:
             mouse_x, _ = pygame.mouse.get_pos()
-            reset_start, reset_end = SCREEN_WIDTH / 3, (SCREEN_WIDTH / 3) * 2
+            reset_start, reset_end = SCREEN_WIDTH/3, (SCREEN_WIDTH/3)*2
             if reset_start < mouse_x < reset_end: self.can_change_room = True
             if self.can_change_room:
-                if mouse_x > SCREEN_WIDTH - EDGE_THRESHOLD:
-                    self.current_room_index = (self.current_room_index + 1) % 8
-                    self.can_change_room = False
-                elif mouse_x < EDGE_THRESHOLD:
-                    self.current_room_index = (self.current_room_index - 1) % 8
-                    self.can_change_room = False
+                if mouse_x > SCREEN_WIDTH - EDGE_THRESHOLD: self.current_room_index = (self.current_room_index + 1) % 8; self.can_change_room = False
+                elif mouse_x < EDGE_THRESHOLD: self.current_room_index = (self.current_room_index - 1) % 8; self.can_change_room = False
 
-        # Zaman Akışı
         end_minutes = END_HOUR * 60
-        if self.current_time_minutes < end_minutes:
-            self.current_time_minutes += 0.05
-
-        # NPC Animasyon Güncelleme
+        if self.current_time_minutes < end_minutes: self.current_time_minutes += 0.05
         try:
             if self.current_npc: self.current_npc.update()
         except: pass
 
     def draw(self):
-        # --- RAPOR EKRANI ÇİZİMİ (SİYAH EKRAN + BUTON) ---
         if self.report_mode:
-            self.screen.fill((0, 0, 0)) # Tamamen siyah
-            
-            # İstatistikleri Hesapla
+            self.screen.fill((0, 0, 0)) 
             total = len(self.daily_stats)
             monsters_in = sum(1 for s in self.daily_stats if s["is_monster"] and s["action"] == "approve")
             innocents_out = sum(1 for s in self.daily_stats if not s["is_monster"] and s["action"] == "deny")
-            
-            # Yazıları Ortala ve Yaz
             font_title = pygame.font.SysFont("Courier New", 30, bold=True)
             font_text = pygame.font.SysFont("Courier New", 20)
-            
-            lines = [
-                f"DAY {getattr(self.game, 'day_count', 1)} ENDED",
-                "",
-                f"Total Processed: {total}",
-                f"Monsters Approved: {monsters_in}", 
-                f"Innocents Rejected: {innocents_out}", 
-                "",
-                "Sleeping..."
-            ]
-            
+            lines = [f"DAY {getattr(self.game, 'day_count', 1)} ENDED", "", f"Total Processed: {total}", f"Monsters Approved: {monsters_in}", f"Innocents Rejected: {innocents_out}", "", "Sleeping..."]
             y_offset = SCREEN_HEIGHT // 4
             for line in lines:
                 color = (200, 50, 50) if "Monster" in line or "Innocent" in line else (200, 200, 200)
                 txt = font_title.render(line, True, color) if "DAY" in line else font_text.render(line, True, color)
                 self.screen.blit(txt, ((SCREEN_WIDTH - txt.get_width()) // 2, y_offset))
                 y_offset += 40
-            
-            # --- SONRAKİ GÜN BUTONU ÇİZİMİ ---
             pygame.draw.rect(self.screen, (50, 50, 50), self.btn_next_day, border_radius=5)
-            pygame.draw.rect(self.screen, (100, 100, 100), self.btn_next_day, 2, border_radius=5) # Çerçeve
-            
+            pygame.draw.rect(self.screen, (100, 100, 100), self.btn_next_day, 2, border_radius=5) 
             btn_txt = self.font.render("NEXT DAY ->", True, (255, 255, 255))
-            # Yazıyı butonun ortasına koy
             btn_x = self.btn_next_day.x + (self.btn_next_day.width - btn_txt.get_width()) // 2
             btn_y = self.btn_next_day.y + (self.btn_next_day.height - btn_txt.get_height()) // 2
             self.screen.blit(btn_txt, (btn_x, btn_y))
-                
-            return # Çizimi bitir, normal oyunu çizme
+            return 
 
-        # --- NORMAL OYUN ÇİZİMİ ---
         self.screen.fill((0, 0, 0))
         canvas = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        if self.room_images: canvas.blit(self.room_images[self.current_room_index], (0, 0))
         
-        # 1. Oda
-        if self.room_images:
-            canvas.blit(self.room_images[self.current_room_index], (0, 0))
-        
-        # 2. ODA 0 (MASA)
         if self.current_room_index == 0:
             if self.current_npc:
                 glass_surf = pygame.Surface(self.GLASS_SIZE, pygame.SRCALPHA)
                 glass_surf.blit(canvas, (0, 0), area=self.glass_rect)
-                
                 char_w, char_h = self.current_npc.image.get_size()
                 local_x = (self.GLASS_SIZE[0] - char_w) // 2
                 local_y = self.GLASS_SIZE[1] - char_h
-                
                 glass_surf.blit(self.current_npc.image, (local_x, local_y))
                 tint = pygame.Surface(self.GLASS_SIZE, pygame.SRCALPHA)
                 tint.fill((0, 20, 30, 80))
                 glass_surf.blit(tint, (0,0))
                 canvas.blit(glass_surf, self.glass_rect.topleft)
 
-            # Butonlar
+            self.shutter.draw(canvas)
+
             pygame.draw.rect(canvas, (30, 160, 30), self.btn_green)
             canvas.blit(self.font.render("POSITIVE", True, (255,255,255)), (self.btn_green.x+10, self.btn_green.y+15))
-            
             pygame.draw.rect(canvas, (160, 30, 30), self.btn_red)
             canvas.blit(self.font.render("NEGATIVE", True, (255,255,255)), (self.btn_red.x+10, self.btn_red.y+15))
 
-            # Belgeler
-            for doc in self.documents:
-                canvas.blit(doc.image, doc.rect)
+            for doc in self.documents: canvas.blit(doc.image, doc.rect)
+            
+            for tool in self.stamp_tools:
+                canvas.blit(tool.image, tool.rect)
 
-        # 3. ZOOM
         if self.current_zoom > 1.001:
             try:
                 zoom = float(self.current_zoom)
-                view_w = int(max(1, SCREEN_WIDTH / zoom))
-                view_h = int(max(1, SCREEN_HEIGHT / zoom))
-                view_x = int(self.focus_x - view_w // 2)
-                view_y = int(self.focus_y - view_h // 2)
-                view_x = max(0, min(view_x, SCREEN_WIDTH - view_w))
-                view_y = max(0, min(view_y, SCREEN_HEIGHT - view_h))
-                
+                view_w = int(max(1, SCREEN_WIDTH / zoom)); view_h = int(max(1, SCREEN_HEIGHT / zoom))
+                view_x = int(self.focus_x - view_w // 2); view_y = int(self.focus_y - view_h // 2)
+                view_x = max(0, min(view_x, SCREEN_WIDTH - view_w)); view_y = max(0, min(view_y, SCREEN_HEIGHT - view_h))
                 sub = canvas.subsurface((view_x, view_y, view_w, view_h)).copy()
                 scaled = pygame.transform.smoothscale(sub, (SCREEN_WIDTH, SCREEN_HEIGHT))
                 self.screen.blit(scaled, (0, 0))
-            except:
-                self.screen.blit(canvas, (0, 0))
-        else:
-            self.screen.blit(canvas, (0, 0))
+            except: self.screen.blit(canvas, (0, 0))
+        else: self.screen.blit(canvas, (0, 0))
 
-        # 4. UI
         day = getattr(self.game, 'day_count', 1)
-        h = int(self.current_time_minutes // 60)
-        m = int(self.current_time_minutes % 60)
+        h = int(self.current_time_minutes // 60); m = int(self.current_time_minutes % 60)
         ui_text = f"DAY {day} | {h:02}:{m:02}"
-
-        ui_w, ui_h = 300, 40
-        ui_x = (SCREEN_WIDTH - ui_w) // 2
-        ui_y = 8
+        ui_w, ui_h = 300, 40; ui_x = (SCREEN_WIDTH - ui_w) // 2; ui_y = 8
         ui_surf = pygame.Surface((ui_w, ui_h), pygame.SRCALPHA)
         ui_surf.fill((10, 10, 10, 200))
         self.screen.blit(ui_surf, (ui_x, ui_y))
         pygame.draw.rect(self.screen, (80, 80, 80), (ui_x, ui_y, ui_w, ui_h), 2)
-        
         color = FONT_COLOR_UI
         if self.current_time_minutes >= END_HOUR * 60:
-            if int(time.time() * 2) % 2 == 0: color = (200, 50, 50) # Yanıp sönen kırmızı
-        
+            if int(time.time() * 2) % 2 == 0: color = (200, 50, 50)
         text_surf = self.font.render(ui_text, True, color)
-        tx = ui_x + (ui_w - text_surf.get_width()) // 2
-        ty = ui_y + (ui_h - text_surf.get_height()) // 2
+        tx = ui_x + (ui_w - text_surf.get_width()) // 2; ty = ui_y + (ui_h - text_surf.get_height()) // 2
         self.screen.blit(text_surf, (tx, ty))
 
-# Diğer Stateler (ActionEye, ActionHand) aynı kalabilir...
+# --- EKSİK OLAN SINIFLAR EKLENDİ ---
 class ActionEyeState(BaseState):
     def __init__(self, manager): super().__init__(manager); self.bg = None; self.baby = None; self.front = None; self.center = (SCREEN_WIDTH//2, SCREEN_HEIGHT//2); self.max_radius = 120; self.pupil_pos = (0,0); self.back_btn = pygame.Rect(50, SCREEN_HEIGHT-80, 150, 50)
     def on_enter(self):
